@@ -1,0 +1,83 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Audio Stream Player</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 800px;
+            margin: 40px auto;
+            padding: 20px;
+            background-color: #f5f5f5;
+        }
+        .player-container {
+            background: white;
+            padding: 20px;
+            border-radius: 8px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+        .progress-info {
+            margin: 10px 0;
+            font-family: monospace;
+        }
+    </style>
+</head>
+<body>
+    <div class="player-container">
+        <h2>Streaming Audio Player</h2>
+        <audio id="audioPlayer" controls></audio>
+        <div id="progress" class="progress-info">Waiting to start...</div>
+    </div>
+
+    <script>
+        const audioPlayer = document.getElementById('audioPlayer');
+        const progressDiv = document.getElementById('progress');
+        let startTime;
+        let loadedBytes = 0;
+
+        // Create MediaSource
+        const mediaSource = new MediaSource();
+        audioPlayer.src = URL.createObjectURL(mediaSource);
+
+        mediaSource.addEventListener('sourceopen', async () => {
+            const sourceBuffer = mediaSource.addSourceBuffer('audio/mpeg');
+            startTime = Date.now();
+
+            // Fetch the audio in chunks
+            const response = await fetch('http://20.57.137.58:8000/api/stream_audio/');
+            const reader = response.body.getReader();
+
+            while(true) {
+                const {done, value} = await reader.read();
+                if (done) break;
+
+                // Update progress
+                loadedBytes += value.length;
+                const seconds = (Date.now() - startTime) / 1000;
+                const kbps = ((loadedBytes / 1024) / seconds).toFixed(2);
+                
+                progressDiv.textContent = `
+                    Loaded: ${(loadedBytes / 1024 / 1024).toFixed(2)} MB
+                    Time: ${seconds.toFixed(1)}s
+                    Speed: ${kbps} KB/s
+                `;
+
+                // Append chunk to sourceBuffer
+                await new Promise(resolve => {
+                    if (sourceBuffer.updating) {
+                        sourceBuffer.addEventListener('updateend', resolve, {once: true});
+                    } else {
+                        sourceBuffer.appendBuffer(value);
+                        resolve();
+                    }
+                });
+            }
+
+            // Close the stream
+            mediaSource.endOfStream();
+        });
+    </script>
+</body>
+</html>
